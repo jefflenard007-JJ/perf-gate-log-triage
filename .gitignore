@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.venv/
+.cache/
+report.xml
+results/
+perf-history.db
+perf-report.md
+triage-report.md
+k6-summary.json

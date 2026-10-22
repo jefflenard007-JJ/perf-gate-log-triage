@@ -1,0 +1,77 @@
+# Pipeline: unit tests -> load test against the app -> performance gate -> log triage
+stages: [test, performance, triage]
+
+variables:
+  PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
+  # The service under test. Default: shop-api image from the reliability-platform project.
+  APP_IMAGE: registry.gitlab.com/YOUR_GITLAB_USERNAME/reliability-platform/shop-api:latest
+
+unit-tests:
+  stage: test
+  image: python:3.12-slim
+  cache:
+    paths: [.cache/pip]
+  script:
+    - pip install -e ".[dev]"
+    - ruff check .
+    - pytest -q --cov=perfgate --cov=logtriage --cov-report=term --junitxml=report.xml
+  coverage: '/TOTAL.*\s(\d+)%/'
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+
+# Demo the gate on the committed sample data: the regressed run MUST fail the gate.
+gate-self-test:
+  stage: test
+  image: python:3.12-slim
+  script:
+    - python -m perfgate.cli check sample_data/current-good.jtl --baseline baselines/orders-api.json --config perfgate.config.json
+    - |
+      if python -m perfgate.cli check sample_data/current-regressed.jtl --baseline baselines/orders-api.json --config perfgate.config.json; then
+        echo "expected the regressed run to fail the gate"; exit 1
+      fi
+
+k6-load-test:
+  stage: performance
+  image:
+    name: grafana/k6:0.55.0
+    entrypoint: [""]
+  services:
+    - name: $APP_IMAGE
+      alias: shop-api
+  variables:
+    BASE_URL: http://shop-api:8000
+  script:
+    - k6 run --summary-export=k6-summary.json loadtests/k6/orders-load.js
+  artifacts:
+    when: always
+    paths: [k6-summary.json]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+performance-gate:
+  stage: performance
+  image: python:3.12-slim
+  needs: [k6-load-test]
+  script:
+    - python -m perfgate.cli check k6-summary.json --baseline baselines/k6-orders.json
+      --config perfgate.config.json --report perf-report.md --db perf-history.db
+  cache:
+    key: perf-history
+    paths: [perf-history.db]
+  artifacts:
+    when: always
+    paths: [perf-report.md, perf-history.db]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+log-triage:
+  stage: triage
+  image: python:3.12-slim
+  script:
+    - python -m logtriage.cli sample_data/app.log --report triage-report.md
+  artifacts:
+    paths: [triage-report.md]

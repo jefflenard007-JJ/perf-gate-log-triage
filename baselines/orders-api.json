@@ -1,0 +1,29 @@
+{
+  "GET /orders": {
+    "label": "GET /orders",
+    "samples": 5333,
+    "error_rate": 0.0019,
+    "p50_ms": 35.0,
+    "p95_ms": 48.0,
+    "p99_ms": 54.0,
+    "throughput_rps": 44.42
+  },
+  "POST /orders": {
+    "label": "POST /orders",
+    "samples": 5333,
+    "error_rate": 0.003,
+    "p50_ms": 62.0,
+    "p95_ms": 175.0,
+    "p99_ms": 200.0,
+    "throughput_rps": 44.42
+  },
+  "ALL": {
+    "label": "ALL",
+    "samples": 10666,
+    "error_rate": 0.0024,
+    "p50_ms": 45.0,
+    "p95_ms": 148.0,
+    "p99_ms": 192.0,
+    "throughput_rps": 88.84
+  }
+}

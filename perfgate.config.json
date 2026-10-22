@@ -1,0 +1,7 @@
+{
+  "max_p95_ms": 300,
+  "max_error_rate": 0.01,
+  "p95_regression_pct": 15,
+  "throughput_drop_pct": 20,
+  "min_samples": 20
+}

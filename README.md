@@ -1,11 +1,13 @@
 # Performance Regression Gate and Log Triage
 
+[![ci](https://github.com/jefflenard007-JJ/perf-gate-log-triage/actions/workflows/ci.yml/badge.svg)](https://github.com/jefflenard007-JJ/perf-gate-log-triage/actions/workflows/ci.yml)
+
 Two small, dependency-free Python tools that plug into CI/CD:
 
 - **`perfgate`** reads JMeter (`.jtl`) or k6 results, checks them against absolute SLO limits **and** a stored baseline, records every run in SQLite, and fails the pipeline when latency, errors or throughput regress.
 - **`logtriage`** reads application logs (JSON or plain text), finds error spikes against a rolling baseline, groups errors by normalised signature, and writes a short root cause summary.
 
-Load tests target `shop-api` from the companion [reliability-platform](https://gitlab.com/YOUR_GITLAB_USERNAME/reliability-platform) project.
+Load tests target `shop-api` from the companion [reliability-platform](https://github.com/jefflenard007-JJ/reliability-platform) project.
 
 ```mermaid
 flowchart LR
@@ -80,7 +82,7 @@ The first time against a real service, save a healthy run as the baseline:
 | Run history | `perfgate/history.py` | SQLite `runs` and `endpoint_stats` tables; trend query in plain SQL |
 | Log parsing | `logtriage/parser.py` | JSON lines and `timestamp LEVEL [service] message`; UUIDs, IPs, numbers and strings normalised into signatures |
 | Spike detection | `logtriage/analyze.py` | Per-minute error counts vs mean + 3σ of the last 15 *normal* minutes, so a long incident isn't absorbed into its own baseline |
-| CI | `.gitlab-ci.yml`, `Jenkinsfile` | GitLab: unit tests, gate self-test, k6 against the app as a CI service, gate, triage. Jenkins: JMeter version |
+| CI | `.github/workflows/ci.yml`, `Jenkinsfile` | GitHub Actions: unit tests, gate self-test, k6 against the app as a service container, gate, triage. Jenkins: JMeter version |
 
 ## Tests
 

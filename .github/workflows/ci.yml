@@ -1,0 +1,81 @@
+# Pipeline: unit tests -> gate self-test -> k6 load test against the app -> performance gate -> log triage
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: pytest -q --cov=perfgate --cov=logtriage --cov-report=term
+
+  # Proves the gate works on the committed sample data: the regressed run MUST fail.
+  gate-self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Healthy run passes
+        run: python -m perfgate.cli check sample_data/current-good.jtl --baseline baselines/orders-api.json --config perfgate.config.json
+      - name: Regressed run is blocked
+        run: |
+          if python -m perfgate.cli check sample_data/current-regressed.jtl --baseline baselines/orders-api.json --config perfgate.config.json; then
+            echo "expected the regressed run to fail the gate"; exit 1
+          fi
+      - name: Log triage report
+        run: python -m logtriage.cli sample_data/app.log --report triage-report.md >> "$GITHUB_STEP_SUMMARY"
+
+  load-test-and-gate:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    services:
+      # shop-api image published by the reliability-platform project
+      shop-api:
+        image: ghcr.io/jefflenard007-jj/reliability-platform/shop-api:latest
+        ports: ["8000:8000"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1
+      - name: Wait for the app
+        run: |
+          for i in $(seq 1 30); do curl -sf http://localhost:8000/healthz && exit 0; sleep 2; done
+          echo "shop-api did not start"; exit 1
+      - name: Run k6
+        run: k6 run -e BASE_URL=http://localhost:8000 --summary-export=k6-summary.json loadtests/k6/orders-load.js
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore run history
+        uses: actions/cache@v4
+        with:
+          path: perf-history.db
+          key: perf-history-${{ github.run_id }}
+          restore-keys: perf-history-
+      - name: Performance gate
+        run: |
+          python -m perfgate.cli check k6-summary.json --baseline baselines/k6-orders.json \
+            --config perfgate.config.json --report perf-report.md --db perf-history.db
+      - name: Publish report
+        if: always()
+        run: cat perf-report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-results
+          path: |
+            k6-summary.json
+            perf-report.md

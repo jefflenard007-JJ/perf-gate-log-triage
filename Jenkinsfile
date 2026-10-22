@@ -1,4 +1,4 @@
-// Jenkins equivalent of .gitlab-ci.yml, for teams running Jenkins.
+// Jenkins equivalent of .github/workflows/ci.yml, for teams running Jenkins.
 // Needs JMeter and Python 3 on the agent.
 pipeline {
   agent any

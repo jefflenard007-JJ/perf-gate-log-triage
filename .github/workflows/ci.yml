@@ -42,23 +42,26 @@ jobs:
   load-test-and-gate:
     needs: unit-tests
     runs-on: ubuntu-latest
-    services:
-      # shop-api image published by the reliability-platform project
-      shop-api:
-        image: ghcr.io/jefflenard007-jj/reliability-platform/shop-api:latest
-        ports: ["8000:8000"]
     steps:
       - uses: actions/checkout@v4
-      - uses: grafana/setup-k6-action@v1
-      - name: Wait for the app
-        run: |
-          for i in $(seq 1 30); do curl -sf http://localhost:8000/healthz && exit 0; sleep 2; done
-          echo "shop-api did not start"; exit 1
-      - name: Run k6
-        run: k6 run -e BASE_URL=http://localhost:8000 --summary-export=k6-summary.json loadtests/k6/orders-load.js
+      # The service under test: shop-api from the companion reliability-platform repo
+      - uses: actions/checkout@v4
+        with:
+          repository: jefflenard007-JJ/reliability-platform
+          path: shop-api
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Start shop-api
+        run: |
+          pip install -r shop-api/app/requirements.txt
+          cd shop-api/app/src
+          nohup uvicorn main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/shop-api.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:8000/healthz && exit 0; sleep 1; done
+          echo "shop-api did not start"; cat "$RUNNER_TEMP/shop-api.log"; exit 1
+      - uses: grafana/setup-k6-action@v1
+      - name: Run k6
+        run: k6 run -e BASE_URL=http://localhost:8000 --summary-export=k6-summary.json loadtests/k6/orders-load.js
       - name: Restore run history
         uses: actions/cache@v4
         with:
@@ -72,10 +75,14 @@ jobs:
       - name: Publish report
         if: always()
         run: cat perf-report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Triage the app's own logs from the load test
+        if: always()
+        run: python -m logtriage.cli "$RUNNER_TEMP/shop-api.log" >> "$GITHUB_STEP_SUMMARY" || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: performance-results
+          if-no-files-found: ignore
           path: |
             k6-summary.json
             perf-report.md
